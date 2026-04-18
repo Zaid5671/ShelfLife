@@ -83,6 +83,7 @@ const LOADING_PHRASES = [
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
+  const [activeNav, setActiveNav] = useState("dashboard");
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 30);
@@ -94,6 +95,11 @@ function Navbar() {
     localStorage.removeItem("token");
     navigate("/login");
   };
+
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: "📊" },
+    { id: "graveyard", label: "Graveyard", icon: "🪦" },
+  ];
 
   return (
     <nav
@@ -116,6 +122,7 @@ function Navbar() {
     >
       {/* Logo */}
       <div
+        onClick={() => navigate("/")}
         style={{
           fontFamily: "'Syne',sans-serif",
           fontWeight: 800,
@@ -146,8 +153,44 @@ function Navbar() {
         ShelfLife
       </div>
 
+      {/* Navigation Items */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "32px",
+          flex: 1,
+          marginLeft: "60px",
+        }}
+      >
+        {navItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => setActiveNav(item.id)}
+            style={{
+              background: "none",
+              border: "none",
+              color: activeNav === item.id ? "#d946ef" : "rgba(255,255,255,0.6)",
+              fontFamily: "'Syne', sans-serif",
+              fontWeight: activeNav === item.id ? 800 : 600,
+              fontSize: "15px",
+              cursor: "pointer",
+              transition: "all 0.3s ease",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              paddingBottom: "4px",
+              borderBottom: activeNav === item.id ? "2px solid #d946ef" : "2px solid transparent",
+            }}
+          >
+            <span>{item.icon}</span>
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       {/* Live badge */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "20px" }}>
         <span
           style={{
             width: 8,
@@ -328,6 +371,7 @@ export default function Dashboard() {
   const [status, setStatus] = useState("idle"); // idle | loading | success
   const [summaryData, setSummaryData] = useState(null);
   const [loadingPhraseIdx, setLoadingPhraseIdx] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const fetchLinks = async () => {
@@ -749,9 +793,11 @@ export default function Dashboard() {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: "20px",
               borderBottom: "1px solid rgba(255,255,255,0.08)",
               paddingBottom: "16px",
               marginBottom: "32px",
+              flexWrap: "wrap",
             }}
           >
             <h2
@@ -765,14 +811,49 @@ export default function Dashboard() {
             >
               Your Collection
             </h2>
+            
+            {/* Search Bar */}
+            <input
+              type="text"
+              placeholder="Search by title, vibe, or source..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                flex: "1",
+                minWidth: "250px",
+                padding: "10px 16px",
+                borderRadius: "12px",
+                background: "rgba(255, 255, 255, 0.05)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                color: "#f0f2f5",
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: "14px",
+                transition: "all 0.3s ease",
+                outline: "none",
+              }}
+              onFocus={(e) => {
+                e.target.style.background = "rgba(255, 255, 255, 0.08)";
+                e.target.style.borderColor = "rgba(217, 70, 239, 0.5)";
+              }}
+              onBlur={(e) => {
+                e.target.style.background = "rgba(255, 255, 255, 0.05)";
+                e.target.style.borderColor = "rgba(255, 255, 255, 0.1)";
+              }}
+            />
+            
             <span
               style={{
                 color: "rgba(255,255,255,0.4)",
                 fontSize: "14px",
                 fontFamily: "'DM Sans', sans-serif",
+                whiteSpace: "nowrap",
               }}
             >
-              {cards.length} Links
+              {cards.filter(card => 
+                card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                card.source?.toLowerCase().includes(searchQuery.toLowerCase())
+              ).length} / {cards.length} Links
             </span>
           </div>
 
@@ -785,7 +866,13 @@ export default function Dashboard() {
             }}
           >
             <AnimatePresence>
-              {cards.map((card, idx) => (
+              {cards
+                .filter(card => 
+                  card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  card.source?.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                .map((card, idx) => (
                 <motion.div
                   key={card._id}
                   layout
