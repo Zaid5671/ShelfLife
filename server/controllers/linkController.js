@@ -85,7 +85,9 @@ async function getCategoryFromSummary(summary) {
 export const ingestLink = async (req, res) => {
   const { url, roomId } = req.body;
   const userId = req.user.id;
-  const normalizedRoomId = roomId ? roomId.toUpperCase().trim() : null;
+  const requestedRoomId = roomId ? roomId.toUpperCase().trim() : null;
+  const isPersonalShelf = requestedRoomId?.startsWith("PERSONAL_");
+  const storageRoomId = isPersonalShelf ? null : requestedRoomId;
 
   if (!url) {
     return res.status(400).json({ message: "URL is required" });
@@ -118,7 +120,7 @@ export const ingestLink = async (req, res) => {
 
     const newLink = new Link({
       user: userId,
-      roomId: normalizedRoomId,
+      roomId: storageRoomId,
       originalUrl: url,
       title: aiAnalysis.title || scrapedTitle,
       summary: aiAnalysis.summary || "No summary available.",
@@ -133,8 +135,8 @@ export const ingestLink = async (req, res) => {
 
     const io = req.app.locals.io;
     if (io) {
-      if (normalizedRoomId) {
-        io.to(normalizedRoomId).emit("message", {
+      if (requestedRoomId) {
+        io.to(requestedRoomId).emit("message", {
           type: "LINK_ADDED",
           card: newLink,
           addedBy: req.user.username || "Someone",
@@ -165,9 +167,19 @@ export const getLinks = async (req, res) => {
   try {
     const { roomId } = req.query;
 
-    const query = roomId
-      ? { roomId: roomId.toUpperCase().trim() }
-      : { user: req.user.id, roomId: null };
+    const normalizedRoomId = roomId ? roomId.toUpperCase().trim() : null;
+
+    let query;
+    if (!normalizedRoomId) {
+      query = { user: req.user.id, roomId: null };
+    } else if (normalizedRoomId.startsWith("PERSONAL_")) {
+      query = {
+        user: req.user.id,
+        roomId: { $in: [null, normalizedRoomId] },
+      };
+    } else {
+      query = { roomId: normalizedRoomId };
+    }
 
     const links = await Link.find(query).sort({ createdAt: -1 });
     res.json(links);

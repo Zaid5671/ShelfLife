@@ -16,7 +16,6 @@ function DecryptedText({ text = "", trigger = false, speed = 25 }) {
   useEffect(() => {
     clearTimeout(timerRef.current);
     if (!trigger) {
-      setDisplay(text);
       return;
     }
 
@@ -110,6 +109,17 @@ const LOADING_PHRASES = [
   "DISTILLING INFORMATION...",
   "GENERATING SHELFLIFE SUMMARY...",
 ];
+
+function getUserIdFromToken(token) {
+  if (!token) return null;
+
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload?.user?.id || null;
+  } catch {
+    return null;
+  }
+}
 
 function formatCreatedLabel(createdAt) {
   if (!createdAt) return "--";
@@ -323,6 +333,8 @@ function Navbar({ onlineCount, weather, roomId, roomName }) {
       <button
         onClick={() => {
           localStorage.removeItem("token");
+          sessionStorage.removeItem("shelfRoomId");
+          sessionStorage.removeItem("shelfRoomName");
           navigate("/login");
         }}
         style={{
@@ -668,8 +680,24 @@ function GridCard({
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  const roomId = sessionStorage.getItem("shelfRoomId") || null;
-  const roomName = sessionStorage.getItem("shelfRoomName") || null;
+  const tokenUserId = getUserIdFromToken(localStorage.getItem("token"));
+  const expectedPersonalId = tokenUserId ? `PERSONAL_${tokenUserId}` : null;
+
+  const storedRoomId = sessionStorage.getItem("shelfRoomId");
+  const storedRoomName = sessionStorage.getItem("shelfRoomName");
+
+  const shouldUsePersonalShelf =
+    !!expectedPersonalId &&
+    (!storedRoomId ||
+      storedRoomId.startsWith("PERSONAL_") ||
+      storedRoomName === "My Personal Shelf");
+
+  const roomId = shouldUsePersonalShelf
+    ? expectedPersonalId
+    : (storedRoomId ?? null);
+  const roomName = shouldUsePersonalShelf
+    ? "My Personal Shelf"
+    : (storedRoomName ?? null);
 
   const [cards, setCards] = useState([]);
   const [url, setUrl] = useState("");
@@ -689,6 +717,24 @@ export default function Dashboard() {
     sendReaction,
     ping,
   } = useSocket(roomId);
+
+  useEffect(() => {
+    if (!expectedPersonalId) return;
+
+    if (
+      shouldUsePersonalShelf &&
+      (storedRoomId !== expectedPersonalId ||
+        storedRoomName !== "My Personal Shelf")
+    ) {
+      sessionStorage.setItem("shelfRoomId", expectedPersonalId);
+      sessionStorage.setItem("shelfRoomName", "My Personal Shelf");
+    }
+  }, [
+    expectedPersonalId,
+    shouldUsePersonalShelf,
+    storedRoomId,
+    storedRoomName,
+  ]);
 
   useEffect(() => {
     window.__shelfOnLinkAdded = (card, addedBy) => {
