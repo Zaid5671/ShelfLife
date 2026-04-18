@@ -23,12 +23,7 @@ async function getGroqChatCompletion(content) {
 
   try {
     const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+      messages: [{ role: "user", content: prompt }],
       model: "llama-3.3-70b-versatile",
       temperature: 0.7,
       max_tokens: 250,
@@ -37,13 +32,10 @@ async function getGroqChatCompletion(content) {
     });
 
     const result = chatCompletion.choices[0]?.message?.content;
-    if (!result) {
-      throw new Error("Groq API returned no result.");
-    }
+    if (!result) throw new Error("Groq API returned no result.");
     return JSON.parse(result);
   } catch (error) {
     console.error("Groq API Error:", error);
-    // Fallback to a default object in case of AI failure
     return {
       title: "Content Analysis Failed",
       summary: "The AI summarizer could not process this content.",
@@ -68,12 +60,7 @@ async function getCategoryFromSummary(summary) {
 
   try {
     const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+      messages: [{ role: "user", content: prompt }],
       model: "llama-3.3-70b-versatile",
       temperature: 0.5,
       max_tokens: 50,
@@ -82,14 +69,13 @@ async function getCategoryFromSummary(summary) {
     });
 
     const result = chatCompletion.choices[0]?.message?.content;
-    if (!result) {
-      throw new Error("Groq API returned no category result.");
-    }
+    if (!result) throw new Error("Groq API returned no category result.");
+
     const parsedResult = JSON.parse(result);
     return parsedResult.category || "General";
   } catch (error) {
     console.error("Groq Category API Error:", error);
-    return "General"; // Fallback category
+    return "General";
   }
 }
 
@@ -97,27 +83,25 @@ async function getCategoryFromSummary(summary) {
 // @route   POST /api/links/ingest
 // @access  Private
 export const ingestLink = async (req, res) => {
-  const { url } = req.body;
+  const { url, roomId } = req.body;
   const userId = req.user.id;
+  const normalizedRoomId = roomId ? roomId.toUpperCase().trim() : null;
 
   if (!url) {
     return res.status(400).json({ message: "URL is required" });
   }
 
   try {
-    // 1. Fetch the HTML from the URL
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.statusText}`);
     }
     const html = await response.text();
 
-    // 2. Parse the HTML with Cheerio
     const $ = cheerio.load(html);
-
-    // 3. Extract content
     const scrapedTitle =
       $("title").first().text() || $("h1").first().text() || "No title found";
+
     $("script, style, nav, footer, header, aside").remove();
     const content = $("body").text().replace(/\s\s+/g, " ").trim();
 
@@ -127,26 +111,42 @@ export const ingestLink = async (req, res) => {
         .json({ message: "Could not extract content from the URL." });
     }
 
-    // 4. Get AI-powered analysis
     const aiAnalysis = await getGroqChatCompletion(content);
+    const category = await getCategoryFromSummary(
+      aiAnalysis.summary || content.slice(0, 500),
+    );
 
-    // 4.5. Get AI-powered category
-    const category = await getCategoryFromSummary(aiAnalysis.summary);
-
-    // 5. Create and save the new Link
     const newLink = new Link({
       user: userId,
+      roomId: normalizedRoomId,
       originalUrl: url,
       title: aiAnalysis.title || scrapedTitle,
-      summary: aiAnalysis.summary,
-      vibe: category, // Use the new dynamic category
-      icon: aiAnalysis.icon,
+      summary: aiAnalysis.summary || "No summary available.",
+      vibe: category || aiAnalysis.vibe || "Educational",
+      icon: aiAnalysis.icon || "📘",
       source: new URL(url).hostname.replace(/^www\./, ""),
-      content, // Storing full content for future use
-      decay: 0, // New links have no decay
+      content,
+      decay: 0,
     });
 
     await newLink.save();
+
+    const io = req.app.locals.io;
+    if (io) {
+      if (normalizedRoomId) {
+        io.to(normalizedRoomId).emit("message", {
+          type: "LINK_ADDED",
+          card: newLink,
+          addedBy: req.user.username || "Someone",
+        });
+      } else {
+        io.emit("message", {
+          type: "LINK_ADDED",
+          card: newLink,
+          addedBy: req.user.username || "Someone",
+        });
+      }
+    }
 
     res.status(201).json(newLink);
   } catch (error) {
@@ -158,14 +158,18 @@ export const ingestLink = async (req, res) => {
   }
 };
 
-// @desc    Get all links for a user
-// @route   GET /api/links
+// @desc    Get all links — filtered by roomId if provided
+// @route   GET /api/links?roomId=XXXX
 // @access  Private
 export const getLinks = async (req, res) => {
   try {
-    const links = await Link.find({ user: req.user.id }).sort({
-      createdAt: -1,
-    });
+    const { roomId } = req.query;
+
+    const query = roomId
+      ? { roomId: roomId.toUpperCase().trim() }
+      : { user: req.user.id, roomId: null };
+
+    const links = await Link.find(query).sort({ createdAt: -1 });
     res.json(links);
   } catch (error) {
     console.error("Error fetching links:", error);
