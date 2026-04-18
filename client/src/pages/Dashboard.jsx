@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import SummaryModal from "../components/SummaryModal";
+
+const MotionDiv = motion.div;
 
 // ─── UTILITY: DecryptedText ──────────────────────────────────────────────────
 function DecryptedText({ text = "", trigger = false, speed = 25 }) {
@@ -12,10 +15,7 @@ function DecryptedText({ text = "", trigger = false, speed = 25 }) {
 
   useEffect(() => {
     clearTimeout(timerRef.current);
-    if (!trigger) {
-      setDisplay(text);
-      return;
-    }
+    if (!trigger) return;
     let frame = 0;
     const steps = text.length * 2;
     const tick = () => {
@@ -40,36 +40,11 @@ function DecryptedText({ text = "", trigger = false, speed = 25 }) {
     return () => clearTimeout(timerRef.current);
   }, [trigger, text, speed]);
 
-  return <>{display}</>;
+  return <>{trigger ? display : text}</>;
 }
 
 // ─── DATA & CONFIG ───────────────────────────────────────────────────────────
-const VIBE_CFG = {
-  "High-Signal": {
-    bg: "linear-gradient(145deg,#0a3d28,#1a6b4a,#0d4535)",
-    pill: "#1D9E75",
-    pillTxt: "#d0f5e8",
-    border: "rgba(29, 158, 117, 0.4)",
-  },
-  Educational: {
-    bg: "linear-gradient(145deg,#091f3d,#163a6b,#0c2d52)",
-    pill: "#2275c4",
-    pillTxt: "#c8e3fb",
-    border: "rgba(34, 117, 196, 0.4)",
-  },
-  Chaotic: {
-    bg: "linear-gradient(145deg,#3d0920,#7a1545,#4d0c2a)",
-    pill: "#b83a68",
-    pillTxt: "#fce8f0",
-    border: "rgba(184, 58, 104, 0.4)",
-  },
-  Cursed: {
-    bg: "linear-gradient(145deg,#2a1600,#5a3008,#3d2005)",
-    pill: "#c47f1a",
-    pillTxt: "#fef0d0",
-    border: "rgba(196, 127, 26, 0.4)",
-  },
-};
+const VIBE_CFG = {};
 
 const LOADING_PHRASES = [
   "INITIALIZING NEURAL SCRAPER...",
@@ -78,6 +53,31 @@ const LOADING_PHRASES = [
   "DISTILLING INFORMATION...",
   "GENERATING SHELFLIFE SUMMARY...",
 ];
+
+function formatCreatedLabel(createdAt) {
+  if (!createdAt) return "--";
+
+  const createdDate = new Date(createdAt);
+  const now = new Date();
+
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const startOfCreated = new Date(
+    createdDate.getFullYear(),
+    createdDate.getMonth(),
+    createdDate.getDate(),
+  );
+
+  const diffMs = startOfToday - startOfCreated;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return `${diffDays}d ago`;
+}
 
 // ─── NAVBAR COMPONENT ────────────────────────────────────────────────────────
 function Navbar() {
@@ -170,7 +170,8 @@ function Navbar() {
             style={{
               background: "none",
               border: "none",
-              color: activeNav === item.id ? "#d946ef" : "rgba(255,255,255,0.6)",
+              color:
+                activeNav === item.id ? "#d946ef" : "rgba(255,255,255,0.6)",
               fontFamily: "'Syne', sans-serif",
               fontWeight: activeNav === item.id ? 800 : 600,
               fontSize: "15px",
@@ -180,7 +181,10 @@ function Navbar() {
               alignItems: "center",
               gap: "6px",
               paddingBottom: "4px",
-              borderBottom: activeNav === item.id ? "2px solid #d946ef" : "2px solid transparent",
+              borderBottom:
+                activeNav === item.id
+                  ? "2px solid #d946ef"
+                  : "2px solid transparent",
             }}
           >
             <span>{item.icon}</span>
@@ -190,7 +194,14 @@ function Navbar() {
       </div>
 
       {/* Live badge */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginRight: "20px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginRight: "20px",
+        }}
+      >
         <span
           style={{
             width: 8,
@@ -234,15 +245,37 @@ function Navbar() {
 }
 
 // ─── CARD COMPONENT ──────────────────────────────────────────────────────────
-function GridCard({ card, index }) {
-  const v = VIBE_CFG[card.vibe] || VIBE_CFG["Educational"];
+const colorCache = {};
+const generateColor = (str) => {
+  if (colorCache[str]) return colorCache[str];
+
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  const h = hash % 360;
+  const s = 70; // Saturation
+
+  const bg = `linear-gradient(145deg, hsl(${h}, ${s}%, 25%), hsl(${h}, ${s}%, 35%))`;
+  const pill = `hsl(${h}, ${s}%, 60%)`;
+  const pillTxt = `hsl(${h}, ${s}%, 15%)`;
+  const border = `hsla(${h}, ${s}%, 60%, 0.4)`;
+
+  const result = { bg, pill, pillTxt, border };
+  colorCache[str] = result;
+  return result;
+};
+
+function GridCard({ card, index, onDelete, onCardClick }) {
+  const v = generateColor(card.vibe);
   const isDecayed = card.decay > 30;
   const sat = isDecayed ? `saturate(${(100 - card.decay) / 100})` : "";
   const decayCol =
     card.decay > 50 ? "#e24b4a" : card.decay > 20 ? "#c47f1a" : v.pill;
 
   return (
-    <motion.div
+    <MotionDiv
       initial={{ opacity: 0, y: 30, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{
@@ -252,7 +285,9 @@ function GridCard({ card, index }) {
         damping: 20,
       }}
       whileHover={{ y: -5, scale: 1.02, boxShadow: `0 12px 30px ${v.border}` }}
+      onClick={() => onCardClick(card)}
       style={{
+        height: "380px",
         width: "100%",
         display: "flex",
         flexDirection: "column",
@@ -299,7 +334,7 @@ function GridCard({ card, index }) {
             fontFamily: "'DM Sans',sans-serif",
           }}
         >
-          {new Date(card.createdAt).toLocaleDateString()}
+          {formatCreatedLabel(card.createdAt)}
         </span>
       </div>
 
@@ -327,6 +362,11 @@ function GridCard({ card, index }) {
           margin: 0,
           flex: 1,
           color: isDecayed ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.7)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          display: "-webkit-box",
+          WebkitLineClamp: 4,
+          WebkitBoxOrient: "vertical",
         }}
       >
         {card.summary}
@@ -360,7 +400,34 @@ function GridCard({ card, index }) {
           </span>
         )}
       </div>
-    </motion.div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete(card._id);
+          }}
+          style={{
+            padding: "6px 10px",
+            borderRadius: "8px",
+            border: "1px solid rgba(226, 75, 74, 0.45)",
+            background: "rgba(226, 75, 74, 0.12)",
+            color: "#e24b4a",
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Delete
+        </button>
+      </div>
+    </MotionDiv>
   );
 }
 
@@ -372,6 +439,7 @@ export default function Dashboard() {
   const [summaryData, setSummaryData] = useState(null);
   const [loadingPhraseIdx, setLoadingPhraseIdx] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCard, setSelectedCard] = useState(null);
 
   useEffect(() => {
     const fetchLinks = async () => {
@@ -426,6 +494,24 @@ export default function Dashboard() {
       clearInterval(phraseInterval);
       setStatus("idle");
       // You might want to show an error message to the user here
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`/api/links/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setCards((prev) => prev.filter((card) => card._id !== id));
+
+      if (summaryData?._id === id) {
+        setSummaryData(null);
+        setStatus("idle");
+      }
+    } catch (error) {
+      console.error("Error deleting link:", error);
     }
   };
 
@@ -515,6 +601,8 @@ export default function Dashboard() {
 
       <Navbar />
 
+      <SummaryModal card={selectedCard} onClose={() => setSelectedCard(null)} />
+
       <div
         style={{
           position: "relative",
@@ -530,7 +618,7 @@ export default function Dashboard() {
         }}
       >
         {/* UPPER SECTION: ADD LINK */}
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
@@ -599,7 +687,7 @@ export default function Dashboard() {
             <AnimatePresence mode="wait">
               {/* LOADING STATE */}
               {status === "loading" && (
-                <motion.div
+                <MotionDiv
                   key="loading"
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
@@ -674,12 +762,12 @@ export default function Dashboard() {
                       DOM...
                     </p>
                   </div>
-                </motion.div>
+                </MotionDiv>
               )}
 
               {/* SUCCESS SUMMARY STATE */}
               {status === "success" && summaryData && (
-                <motion.div
+                <MotionDiv
                   key="success"
                   initial={{ opacity: 0, y: 20, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -780,11 +868,11 @@ export default function Dashboard() {
                       />
                     </p>
                   </div>
-                </motion.div>
+                </MotionDiv>
               )}
             </AnimatePresence>
           </div>
-        </motion.div>
+        </MotionDiv>
 
         {/* LOWER SECTION: GRID OF LINKS */}
         <div style={{ width: "100%" }}>
@@ -811,7 +899,7 @@ export default function Dashboard() {
             >
               Your Collection
             </h2>
-            
+
             {/* Search Bar */}
             <input
               type="text"
@@ -840,7 +928,7 @@ export default function Dashboard() {
                 e.target.style.borderColor = "rgba(255, 255, 255, 0.1)";
               }}
             />
-            
+
             <span
               style={{
                 color: "rgba(255,255,255,0.4)",
@@ -849,15 +937,25 @@ export default function Dashboard() {
                 whiteSpace: "nowrap",
               }}
             >
-              {cards.filter(card => 
-                card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                card.source?.toLowerCase().includes(searchQuery.toLowerCase())
-              ).length} / {cards.length} Links
+              {
+                cards.filter(
+                  (card) =>
+                    card.title
+                      ?.toLowerCase()
+                      .includes(searchQuery.toLowerCase()) ||
+                    card.vibe
+                      ?.toLowerCase()
+                      .includes(searchQuery.toLowerCase()) ||
+                    card.source
+                      ?.toLowerCase()
+                      .includes(searchQuery.toLowerCase()),
+                ).length
+              }{" "}
+              / {cards.length} Links
             </span>
           </div>
 
-          <motion.div
+          <MotionDiv
             layout
             style={{
               display: "grid",
@@ -867,24 +965,54 @@ export default function Dashboard() {
           >
             <AnimatePresence>
               {cards
-                .filter(card => 
-                  card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                  card.source?.toLowerCase().includes(searchQuery.toLowerCase())
+                .filter(
+                  (card) =>
+                    card.title
+                      ?.toLowerCase()
+                      .includes(searchQuery.toLowerCase()) ||
+                    card.vibe
+                      ?.toLowerCase()
+                      .includes(searchQuery.toLowerCase()) ||
+                    card.source
+                      ?.toLowerCase()
+                      .includes(searchQuery.toLowerCase()),
                 )
                 .map((card, idx) => (
-                <motion.div
-                  key={card._id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.8, y: 50 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                >
-                  <GridCard card={card} index={idx} />
-                </motion.div>
-              ))}
+                  <MotionDiv
+                    key={card._id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.8, y: 50 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  >
+                    <GridCard
+                      card={card}
+                      index={idx}
+                      onDelete={handleDelete}
+                      onCardClick={setSelectedCard}
+                    />
+                  </MotionDiv>
+                ))}
             </AnimatePresence>
-          </motion.div>
+          </MotionDiv>
+
+          {cards.filter(
+            (card) =>
+              card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              card.source?.toLowerCase().includes(searchQuery.toLowerCase()),
+          ).length === 0 && (
+            <div
+              style={{
+                marginTop: "16px",
+                color: "rgba(255,255,255,0.55)",
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: "14px",
+              }}
+            >
+              No matching links found.
+            </div>
+          )}
         </div>
       </div>
     </>
