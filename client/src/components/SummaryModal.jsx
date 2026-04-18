@@ -1,5 +1,5 @@
 import React from "react";
-import { AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 const VIBE_CFG = {
   "High-Signal": {
@@ -31,7 +31,22 @@ const VIBE_CFG = {
 export default function SummaryModal({ card, onClose }) {
   if (!card) return null;
 
-  const v = VIBE_CFG[card.vibe] || VIBE_CFG["Educational"];
+  const v =
+    VIBE_CFG[card.vibe] ||
+    (() => {
+      const label = String(card.vibe || "General");
+      let hash = 0;
+      for (let index = 0; index < label.length; index++) {
+        hash = label.charCodeAt(index) + ((hash << 5) - hash);
+      }
+      const hue = Math.abs(hash) % 360;
+      return {
+        bg: `linear-gradient(145deg, hsl(${hue},70%,18%), hsl(${hue},65%,26%), hsl(${hue},72%,20%))`,
+        pill: `hsl(${hue},72%,55%)`,
+        pillTxt: `hsl(${hue},95%,10%)`,
+        border: `hsla(${hue},72%,55%,0.35)`,
+      };
+    })();
 
   return (
     <AnimatePresence>
