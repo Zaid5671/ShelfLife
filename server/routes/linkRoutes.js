@@ -1,9 +1,5 @@
 import express from "express";
-import {
-  ingestLink,
-  getLinks,
-  deleteLink,
-} from "../controllers/linkController.js";
+import { ingestLink, getLinks, archiveLink, restoreLink, deleteLink } from "../controllers/linkController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
@@ -18,8 +14,18 @@ router.post("/ingest", authMiddleware, ingestLink);
 // @access  Private
 router.get("/", authMiddleware, getLinks);
 
+// @route   PUT /api/links/:id/archive
+// @desc    Archive a link
+// @access  Private
+router.put("/:id/archive", authMiddleware, archiveLink);
+
+// @route   PUT /api/links/:id/restore
+// @desc    Restore a link
+// @access  Private
+router.put("/:id/restore", authMiddleware, restoreLink);
+
 // @route   DELETE /api/links/:id
-// @desc    Delete a link for a user
+// @desc    Delete a link permanently
 // @access  Private
 router.delete("/:id", authMiddleware, deleteLink);
 

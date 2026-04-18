@@ -1,35 +1,34 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence, useScroll } from "framer-motion";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import SummaryModal from "../components/SummaryModal";
-import { useSocket } from "../hooks/useSocket";
+import Navbar from "../components/Navbar";
+import ScrollAnimationCanvas from "../components/ScrollAnimationCanvas";
+import FloatingOrbs from "../components/FloatingOrbs";
+import RadialProgress from "../components/RadialProgress";
 
-const MotionDiv = motion.div;
-
+// ─── UTILITY: DecryptedText ──────────────────────────────────────────────────
 function DecryptedText({ text = "", trigger = false, speed = 25 }) {
-  const CHARS =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+  const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const [display, setDisplay] = useState(text);
   const timerRef = useRef(null);
 
   useEffect(() => {
     clearTimeout(timerRef.current);
     if (!trigger) {
+      setDisplay(text);
       return;
     }
-
     let frame = 0;
-    const steps = Math.max(text.length * 2, 1);
-
+    const steps = text.length * 2;
     const tick = () => {
       frame++;
       const revealed = Math.floor((frame / steps) * text.length);
       setDisplay(
         text
           .split("")
-          .map((ch, index) =>
-            index < revealed
+          .map((ch, i) =>
+            i < revealed
               ? ch
               : ch === " "
                 ? " "
@@ -37,70 +36,47 @@ function DecryptedText({ text = "", trigger = false, speed = 25 }) {
           )
           .join(""),
       );
-
-      if (revealed < text.length) {
-        timerRef.current = setTimeout(tick, speed);
-      } else {
-        setDisplay(text);
-      }
+      if (revealed < text.length) timerRef.current = setTimeout(tick, speed);
+      else setDisplay(text);
     };
-
     timerRef.current = setTimeout(tick, speed);
     return () => clearTimeout(timerRef.current);
   }, [trigger, text, speed]);
 
-  return <>{trigger ? display : text}</>;
+  return <>{display}</>;
 }
 
+// ─── DATA & CONFIG ───────────────────────────────────────────────────────────
 const VIBE_CFG = {
   "High-Signal": {
-    bg: "linear-gradient(145deg,#0a3d28,#1a6b4a,#0d4535)",
-    pill: "#1D9E75",
-    pillTxt: "#d0f5e8",
-    border: "rgba(29,158,117,0.4)",
+    bg: "rgba(0, 214, 255, 0.02)",
+    pill: "rgba(0, 214, 255, 0.1)",
+    pillTxt: "#00D6FF",
+    border: "rgba(0, 214, 255, 0.15)",
+    shadow: "rgba(0, 214, 255, 0.2)",
   },
   Educational: {
-    bg: "linear-gradient(145deg,#091f3d,#163a6b,#0c2d52)",
-    pill: "#2275c4",
-    pillTxt: "#c8e3fb",
-    border: "rgba(34,117,196,0.4)",
+    bg: "rgba(0, 80, 255, 0.02)",
+    pill: "rgba(0, 80, 255, 0.1)",
+    pillTxt: "#0050FF",
+    border: "rgba(0, 80, 255, 0.15)",
+    shadow: "rgba(0, 80, 255, 0.2)",
   },
   Chaotic: {
-    bg: "linear-gradient(145deg,#3d0920,#7a1545,#4d0c2a)",
-    pill: "#b83a68",
-    pillTxt: "#fce8f0",
-    border: "rgba(184,58,104,0.4)",
+    bg: "rgba(255, 213, 74, 0.02)",
+    pill: "rgba(255, 213, 74, 0.1)",
+    pillTxt: "#FFD54A",
+    border: "rgba(255, 213, 74, 0.15)",
+    shadow: "rgba(255, 213, 74, 0.2)",
   },
   Cursed: {
-    bg: "linear-gradient(145deg,#2a1600,#5a3008,#3d2005)",
-    pill: "#c47f1a",
-    pillTxt: "#fef0d0",
-    border: "rgba(196,127,26,0.4)",
+    bg: "rgba(124, 58, 237, 0.02)",
+    pill: "rgba(124, 58, 237, 0.1)",
+    pillTxt: "#7C3AED",
+    border: "rgba(124, 58, 237, 0.15)",
+    shadow: "rgba(124, 58, 237, 0.2)",
   },
 };
-
-const WEATHER_CFG = {
-  STORMY: {
-    icon: "⛈️",
-    label: "Stormy",
-    color: "#2275c4",
-    glow: "rgba(34,117,196,0.25)",
-  },
-  BREEZY: {
-    icon: "🌤️",
-    label: "Breezy",
-    color: "#1D9E75",
-    glow: "rgba(29,158,117,0.25)",
-  },
-  FOGGY: {
-    icon: "🌫️",
-    label: "Foggy",
-    color: "#888780",
-    glow: "rgba(136,135,128,0.2)",
-  },
-};
-
-const REACTION_EMOJIS = ["🔥", "💀", "⚡", "👀", "🤯"];
 
 const LOADING_PHRASES = [
   "INITIALIZING NEURAL SCRAPER...",
@@ -110,358 +86,14 @@ const LOADING_PHRASES = [
   "GENERATING SHELFLIFE SUMMARY...",
 ];
 
-function getUserIdFromToken(token) {
-  if (!token) return null;
-
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload?.user?.id || null;
-  } catch {
-    return null;
-  }
-}
-
-function formatCreatedLabel(createdAt) {
-  if (!createdAt) return "--";
-
-  const createdDate = new Date(createdAt);
-  const now = new Date();
-
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
-  const startOfCreated = new Date(
-    createdDate.getFullYear(),
-    createdDate.getMonth(),
-    createdDate.getDate(),
-  );
-
-  const diffMs = startOfToday - startOfCreated;
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays <= 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return `${diffDays}d ago`;
-}
-
-function getDynamicCategoryStyle(category = "General") {
-  const normalized = String(category).trim();
-  if (VIBE_CFG[normalized]) return VIBE_CFG[normalized];
-
-  let hash = 0;
-  for (let index = 0; index < normalized.length; index++) {
-    hash = normalized.charCodeAt(index) + ((hash << 5) - hash);
-  }
-
-  const hue = Math.abs(hash) % 360;
-  return {
-    bg: `linear-gradient(145deg, hsl(${hue},70%,18%), hsl(${hue},65%,26%), hsl(${hue},72%,20%))`,
-    pill: `hsl(${hue},72%,55%)`,
-    pillTxt: `hsl(${hue},95%,10%)`,
-    border: `hsla(${hue},72%,55%,0.35)`,
-  };
-}
-
-function Navbar({ onlineCount, weather, roomId, roomName }) {
-  const [scrolled, setScrolled] = useState(false);
-  const navigate = useNavigate();
-  const wCfg = WEATHER_CFG[weather] || WEATHER_CFG.FOGGY;
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 30);
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  const handleLeaveRoom = () => {
-    sessionStorage.removeItem("shelfRoomId");
-    sessionStorage.removeItem("shelfRoomName");
-    navigate("/room");
-  };
-
-  return (
-    <nav
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        height: 70,
-        padding: "0 36px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        background: scrolled ? "rgba(5,8,16,0.92)" : "rgba(5,8,16,0.3)",
-        backdropFilter: "blur(18px)",
-        borderBottom: `1px solid ${
-          scrolled ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)"
-        }`,
-        transition: "all 0.35s ease",
-      }}
-    >
-      <div
-        onClick={() => navigate("/")}
-        style={{
-          fontFamily: "'Syne',sans-serif",
-          fontWeight: 800,
-          fontSize: 20,
-          color: "#c084fc",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          cursor: "pointer",
-        }}
-      >
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 10,
-            background: "linear-gradient(135deg,#c084fc,#d946ef)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 16,
-            fontWeight: 800,
-            color: "#fff",
-          }}
-        >
-          S
-        </div>
-        ShelfLife
-      </div>
-
-      {roomId && (
-        <div
-          onClick={handleLeaveRoom}
-          title="Click to leave room"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "6px 14px",
-            borderRadius: 999,
-            background: "rgba(192,132,252,0.1)",
-            border: "1px solid rgba(192,132,252,0.25)",
-            cursor: "pointer",
-          }}
-        >
-          <span style={{ fontSize: 13 }}>🏠</span>
-          <span
-            style={{
-              fontFamily: "'DM Sans',sans-serif",
-              fontSize: 12,
-              color: "#c084fc",
-              fontWeight: 600,
-            }}
-          >
-            {roomName || roomId}
-          </span>
-          <span
-            style={{
-              fontFamily: "'Syne',sans-serif",
-              fontSize: 11,
-              color: "rgba(192,132,252,0.6)",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-            }}
-          >
-            {roomId}
-          </span>
-        </div>
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "5px 14px",
-          borderRadius: 999,
-          marginRight: 16,
-          background: wCfg.glow,
-          border: `1px solid ${wCfg.color}50`,
-          transition: "all 0.6s ease",
-        }}
-      >
-        <span style={{ fontSize: 15 }}>{wCfg.icon}</span>
-        <span
-          style={{
-            fontFamily: "'DM Sans',sans-serif",
-            fontSize: 12,
-            color: wCfg.color,
-            fontWeight: 600,
-          }}
-        >
-          {wCfg.label}
-        </span>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginRight: 20,
-        }}
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "#d946ef",
-            boxShadow: "0 0 10px #d946ef",
-            animation: "pulse 2s infinite",
-          }}
-        />
-        <span
-          style={{
-            fontFamily: "'DM Sans',sans-serif",
-            fontSize: 13,
-            color: "rgba(255,255,255,0.5)",
-            fontWeight: 500,
-          }}
-        >
-          {onlineCount} online
-        </span>
-      </div>
-
-      <button
-        onClick={() => {
-          localStorage.removeItem("token");
-          sessionStorage.removeItem("shelfRoomId");
-          sessionStorage.removeItem("shelfRoomName");
-          navigate("/login");
-        }}
-        style={{
-          padding: "8px 16px",
-          borderRadius: "8px",
-          border: "1px solid rgba(217,70,239,0.5)",
-          background: "transparent",
-          color: "#d946ef",
-          fontFamily: "'DM Sans',sans-serif",
-          fontWeight: 600,
-          fontSize: "14px",
-          cursor: "pointer",
-        }}
-      >
-        Logout
-      </button>
-    </nav>
-  );
-}
-
-function LiveCursors({ cursors }) {
-  return (
-    <>
-      {Object.entries(cursors).map(([socketId, position]) => (
-        <div
-          key={socketId}
-          style={{
-            position: "fixed",
-            left: `${position.x}%`,
-            top: `${position.y}%`,
-            pointerEvents: "none",
-            zIndex: 9998,
-            transition: "left 0.08s linear, top 0.08s linear",
-            transform: "translate(-2px, -2px)",
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path
-              d="M2 2L16 8L9 10L7 16L2 2Z"
-              fill="#d946ef"
-              stroke="#fff"
-              strokeWidth="1"
-            />
-          </svg>
-          <div
-            style={{
-              marginTop: 2,
-              background: "#d946ef",
-              color: "#fff",
-              fontSize: 10,
-              fontWeight: 700,
-              fontFamily: "'DM Sans',sans-serif",
-              padding: "2px 8px",
-              borderRadius: 999,
-              whiteSpace: "nowrap",
-              boxShadow: "0 2px 8px rgba(217,70,239,0.5)",
-            }}
-          >
-            {position.username}
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function Toast({ message, onDone }) {
-  useEffect(() => {
-    const timeout = setTimeout(onDone, 4000);
-    return () => clearTimeout(timeout);
-  }, [onDone]);
+// ─── CARD COMPONENT ──────────────────────────────────────────────────────────
+function GridCard({ card, index }) {
+  const v = VIBE_CFG[card.vibe] || VIBE_CFG["Educational"];
+  const isDecayed = card.decay > 30;
+  const decayCol = card.decay > 50 ? "#EF4444" : card.decay > 20 ? "#FFD54A" : v.pillTxt;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 40, x: "-50%" }}
-      animate={{ opacity: 1, y: 0, x: "-50%" }}
-      exit={{ opacity: 0, y: 20, x: "-50%" }}
-      style={{
-        position: "fixed",
-        bottom: 32,
-        left: "50%",
-        zIndex: 9999,
-        whiteSpace: "nowrap",
-        background: "rgba(29,158,117,0.15)",
-        border: "1px solid rgba(29,158,117,0.4)",
-        borderRadius: 999,
-        padding: "10px 20px",
-        fontFamily: "'DM Sans',sans-serif",
-        fontSize: 13,
-        color: "#1D9E75",
-        fontWeight: 600,
-        backdropFilter: "blur(12px)",
-        boxShadow: "0 8px 30px rgba(0,0,0,0.4)",
-      }}
-    >
-      {message}
-    </motion.div>
-  );
-}
-
-function GridCard({
-  card,
-  index,
-  onReact,
-  floatingEmojis,
-  onDelete,
-  onCardClick,
-}) {
-  const vibeStyle = getDynamicCategoryStyle(card.vibe);
-  const isDecayed = card.decay > 30;
-  const sat = isDecayed ? `saturate(${(100 - card.decay) / 100})` : "";
-  const decayCol =
-    card.decay > 50 ? "#e24b4a" : card.decay > 20 ? "#c47f1a" : vibeStyle.pill;
-  const cardEmojis = floatingEmojis.filter(
-    (emojiItem) => emojiItem.cardId === card._id,
-  );
-  const [pressedEmoji, setPressedEmoji] = useState(null);
-
-  const handleReact = (event, emoji) => {
-    event.stopPropagation();
-    setPressedEmoji(emoji);
-    setTimeout(() => setPressedEmoji(null), 300);
-    onReact(card._id, emoji);
-  };
-
-  return (
-    <MotionDiv
       initial={{ opacity: 0, y: 30, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{
@@ -470,54 +102,26 @@ function GridCard({
         stiffness: 200,
         damping: 20,
       }}
-      whileHover={{
-        y: -5,
-        scale: 1.02,
-        boxShadow: `0 12px 30px ${vibeStyle.border}`,
-      }}
-      onClick={() => onCardClick(card)}
+      whileHover={{ y: -8, scale: 1.02, boxShadow: `0 32px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2)` }}
       style={{
-        height: "380px",
         width: "100%",
         display: "flex",
         flexDirection: "column",
         gap: 16,
-        background: isDecayed
-          ? "linear-gradient(145deg,#121212,#1a1a1a)"
-          : vibeStyle.bg,
-        border: `1px solid ${isDecayed ? "rgba(255,255,255,0.06)" : vibeStyle.border}`,
-        borderRadius: "20px",
-        padding: "24px",
+        background: isDecayed ? "rgba(255, 255, 255, 0.01)" : v.bg,
+        backdropFilter: "blur(32px) saturate(180%)",
+        WebkitBackdropFilter: "blur(32px) saturate(180%)",
+        border: `1px solid ${isDecayed ? "rgba(255,255,255,0.04)" : v.border}`,
+        borderRadius: "32px",
+        padding: "32px",
         overflow: "hidden",
         cursor: "pointer",
         position: "relative",
-        filter: sat,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+        boxShadow: "0 12px 40px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.06)",
+        transition: "all 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
-      <AnimatePresence>
-        {cardEmojis.map((emojiItem) => (
-          <motion.div
-            key={emojiItem.id}
-            initial={{ opacity: 1, y: 10, scale: 0.6, x: "-50%" }}
-            animate={{ opacity: 0, y: -70, scale: 1.6, x: "-50%" }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 1.4, ease: [0.2, 0.8, 0.4, 1] }}
-            style={{
-              position: "absolute",
-              bottom: "76px",
-              left: "50%",
-              fontSize: 32,
-              pointerEvents: "none",
-              zIndex: 20,
-              filter: "drop-shadow(0 0 8px rgba(255,255,255,0.4))",
-            }}
-          >
-            {emojiItem.emoji}
-          </motion.div>
-        ))}
-      </AnimatePresence>
-
+      {/* Vibe and Time */}
       <div
         style={{
           display: "flex",
@@ -527,281 +131,175 @@ function GridCard({
       >
         <span
           style={{
-            fontFamily: "'Syne',sans-serif",
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            padding: "4px 12px",
-            borderRadius: 999,
-            background: isDecayed ? "rgba(255,255,255,0.1)" : vibeStyle.pill,
-            color: isDecayed ? "rgba(255,255,255,0.38)" : vibeStyle.pillTxt,
+            fontFamily: "'Inter', sans-serif",
+            fontSize: "13px",
+            fontWeight: 600,
+            padding: "6px 14px",
+            borderRadius: "999px",
+            background: isDecayed ? "rgba(255,255,255,0.03)" : v.pill,
+            color: isDecayed ? "rgba(255,255,255,0.4)" : v.pillTxt,
+            border: `1px solid ${isDecayed ? "transparent" : v.border}`
           }}
         >
           {card.icon} &nbsp; {card.vibe}
         </span>
         <span
           style={{
-            fontSize: 11,
+            fontSize: "13px",
             color: "rgba(255,255,255,0.4)",
-            fontFamily: "'DM Sans',sans-serif",
+            fontFamily: "'Inter', sans-serif",
           }}
         >
-          {formatCreatedLabel(card.createdAt)}
+          {new Date(card.createdAt).toLocaleDateString()}
         </span>
       </div>
 
+      {/* Title */}
       <h3
         style={{
-          fontFamily: "'Syne',sans-serif",
-          fontSize: 18,
-          fontWeight: 800,
+          fontFamily: "'Inter', sans-serif",
+          fontSize: "20px",
+          fontWeight: 700,
           lineHeight: 1.3,
+          letterSpacing: "-0.3px",
           margin: 0,
-          color: isDecayed ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.95)",
+          color: isDecayed ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.92)",
         }}
       >
         {card.title}
       </h3>
 
+      {/* Summary */}
       <p
         style={{
-          fontFamily: "'DM Sans',sans-serif",
-          fontSize: 14,
-          fontWeight: 300,
+          fontFamily: "'Inter', sans-serif",
+          fontSize: "15px",
+          fontWeight: 400,
           lineHeight: 1.6,
           margin: 0,
           flex: 1,
-          color: isDecayed ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.7)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          display: "-webkit-box",
-          WebkitLineClamp: 4,
-          WebkitBoxOrient: "vertical",
+          color: isDecayed ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.60)",
         }}
       >
         {card.summary}
       </p>
 
+      {/* Footer */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          paddingTop: 12,
-          borderTop: "1px solid rgba(255,255,255,0.08)",
+          paddingTop: 20,
+          borderTop: "1px solid rgba(255,255,255,0.06)",
         }}
       >
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+        <span style={{ fontSize: "13px", fontFamily: "'Inter', sans-serif", color: "rgba(255,255,255,0.4)", flex: 1, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
           🔗 {card.source}
         </span>
-        {card.decay > 0 && (
-          <span
+        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+          {card.decay > 0 && (
+            <RadialProgress percentage={card.decay} color={decayCol} size={28} />
+          )}
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              if(window.confirm("Move to Graveyard?")) {
+                const token = localStorage.getItem("token");
+                try {
+                  await axios.put(`/api/links/${card._id}/archive`, {}, { headers: { Authorization: `Bearer ${token}` } });
+                  window.dispatchEvent(new CustomEvent('linkArchived', { detail: card._id }));
+                } catch (err) {
+                  console.error(err);
+                }
+              }
+            }}
             style={{
-              fontSize: 10,
-              fontWeight: 600,
-              borderRadius: 999,
-              padding: "2px 8px",
-              border: `1px solid ${decayCol}55`,
-              color: decayCol,
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "rgba(255,255,255,0.8)",
+              borderRadius: "10px",
+              padding: "8px 14px",
+              fontSize: "12px",
+              fontFamily: "'Inter', sans-serif",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
+            onMouseOver={(e) => {
+              e.target.style.background = "rgba(255,255,255,0.1)";
+              e.target.style.color = "rgba(255,255,255,1)";
+              e.target.style.borderColor = "rgba(255,255,255,0.2)";
+            }}
+            onMouseOut={(e) => {
+              e.target.style.background = "rgba(255,255,255,0.03)";
+              e.target.style.color = "rgba(255,255,255,0.8)";
+              e.target.style.borderColor = "rgba(255,255,255,0.1)";
             }}
           >
-            {card.decay}% decayed
-          </span>
-        )}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          borderTop: "1px solid rgba(255,255,255,0.06)",
-          paddingTop: 10,
-        }}
-      >
-        <div style={{ display: "flex", gap: 6 }}>
-          {REACTION_EMOJIS.map((emoji) => (
-            <motion.button
-              key={emoji}
-              onClick={(event) => handleReact(event, emoji)}
-              animate={
-                pressedEmoji === emoji
-                  ? {
-                      scale: [1, 1.5, 0.9, 1.1, 1],
-                      rotate: [0, -10, 10, -5, 0],
-                    }
-                  : { scale: 1 }
-              }
-              transition={{ duration: 0.4 }}
-              whileHover={{ scale: 1.25, y: -3 }}
-              whileTap={{ scale: 0.85 }}
-              style={{
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 10,
-                padding: "5px 9px",
-                fontSize: 16,
-                cursor: "pointer",
-                color: "rgba(255,255,255,0.8)",
-                fontFamily: "inherit",
-                transition: "background 0.15s",
-              }}
-            >
-              {emoji}
-            </motion.button>
-          ))}
+            Archive
+          </button>
         </div>
-
-        <button
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete(card._id);
-          }}
-          style={{
-            padding: "6px 10px",
-            borderRadius: "8px",
-            border: "1px solid rgba(226,75,74,0.45)",
-            background: "rgba(226,75,74,0.12)",
-            color: "#e24b4a",
-            fontFamily: "'DM Sans',sans-serif",
-            fontSize: "12px",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          Delete
-        </button>
       </div>
-    </MotionDiv>
+    </motion.div>
   );
 }
 
+// ─── DASHBOARD PAGE ──────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const navigate = useNavigate();
-
-  const tokenUserId = getUserIdFromToken(localStorage.getItem("token"));
-  const expectedPersonalId = tokenUserId ? `PERSONAL_${tokenUserId}` : null;
-
-  const storedRoomId = sessionStorage.getItem("shelfRoomId");
-  const storedRoomName = sessionStorage.getItem("shelfRoomName");
-
-  const shouldUsePersonalShelf =
-    !!expectedPersonalId &&
-    (!storedRoomId ||
-      storedRoomId.startsWith("PERSONAL_") ||
-      storedRoomName === "My Personal Shelf");
-
-  const roomId = shouldUsePersonalShelf
-    ? expectedPersonalId
-    : (storedRoomId ?? null);
-  const roomName = shouldUsePersonalShelf
-    ? "My Personal Shelf"
-    : (storedRoomName ?? null);
-
   const [cards, setCards] = useState([]);
   const [url, setUrl] = useState("");
-  const [status, setStatus] = useState("idle");
+  const [status, setStatus] = useState("idle"); // idle | loading | success
   const [summaryData, setSummaryData] = useState(null);
   const [loadingPhraseIdx, setLoadingPhraseIdx] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
-  const [toast, setToast] = useState(null);
-  const [selectedCard, setSelectedCard] = useState(null);
-
-  const {
-    onlineCount,
-    weather,
-    cursors,
-    floatingEmojis,
-    sendCursor,
-    sendReaction,
-    ping,
-  } = useSocket(roomId);
-
-  useEffect(() => {
-    if (!expectedPersonalId) return;
-
-    if (
-      shouldUsePersonalShelf &&
-      (storedRoomId !== expectedPersonalId ||
-        storedRoomName !== "My Personal Shelf")
-    ) {
-      sessionStorage.setItem("shelfRoomId", expectedPersonalId);
-      sessionStorage.setItem("shelfRoomName", "My Personal Shelf");
-    }
-  }, [
-    expectedPersonalId,
-    shouldUsePersonalShelf,
-    storedRoomId,
-    storedRoomName,
-  ]);
-
-  useEffect(() => {
-    window.__shelfOnLinkAdded = (card, addedBy) => {
-      setCards((prev) => {
-        if (prev.some((item) => item._id === card._id)) return prev;
-        return [card, ...prev];
-      });
-      setToast(`✦ ${addedBy} just added: "${card.title.slice(0, 40)}..."`);
-    };
-
-    return () => {
-      window.__shelfOnLinkAdded = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const onMouseMove = (event) => {
-      sendCursor(
-        (event.clientX / window.innerWidth) * 100,
-        (event.clientY / window.innerHeight) * 100,
-      );
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    return () => window.removeEventListener("mousemove", onMouseMove);
-  }, [sendCursor]);
+  const containerRef = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end end"]
+  });
 
   useEffect(() => {
     const fetchLinks = async () => {
       try {
         const token = localStorage.getItem("token");
-        const params = roomId ? { roomId } : {};
-        const { data } = await axios.get("/api/links", {
+        const { data } = await axios.get("/api/links?archived=false", {
           headers: { Authorization: `Bearer ${token}` },
-          params,
         });
-
         setCards(Array.isArray(data) ? data : []);
       } catch (error) {
         console.error("Error fetching links:", error);
-        setCards([]);
+        setCards([]); // Also set to empty array on error
       }
     };
-
     fetchLinks();
-  }, [roomId]);
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+    const handleArchive = (e) => {
+      setCards(prev => prev.filter(c => c._id !== e.detail));
+    };
+    window.addEventListener('linkArchived', handleArchive);
+    return () => window.removeEventListener('linkArchived', handleArchive);
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     if (!url.trim()) return;
 
     setStatus("loading");
     setSummaryData(null);
     setLoadingPhraseIdx(0);
-    ping();
 
     const phraseInterval = setInterval(() => {
       setLoadingPhraseIdx((prev) =>
         Math.min(prev + 1, LOADING_PHRASES.length - 1),
       );
-    }, 1000);
+    }, 1500);
 
     try {
       const token = localStorage.getItem("token");
       const { data: newCard } = await axios.post(
         "/api/links/ingest",
-        { url, roomId },
+        { url },
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -811,10 +309,7 @@ export default function Dashboard() {
       setUrl("");
 
       setTimeout(() => {
-        setCards((prev) => {
-          if (prev.some((item) => item._id === newCard._id)) return prev;
-          return [newCard, ...prev];
-        });
+        setCards((prev) => [newCard, ...prev]);
         setStatus("idle");
         setSummaryData(null);
       }, 3500);
@@ -825,479 +320,464 @@ export default function Dashboard() {
     }
   };
 
-  const handleDelete = async (id) => {
-    try {
-      const token = localStorage.getItem("token");
-      await axios.delete(`/api/links/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      setCards((prev) => prev.filter((card) => card._id !== id));
-
-      if (summaryData?._id === id) {
-        setSummaryData(null);
-        setStatus("idle");
-      }
-      if (selectedCard?._id === id) {
-        setSelectedCard(null);
-      }
-    } catch (error) {
-      console.error("Error deleting link:", error);
-    }
-  };
-
-  const handleReact = useCallback(
-    (cardId, emoji) => {
-      sendReaction(cardId, emoji);
-    },
-    [sendReaction],
-  );
-
-  const filteredCards = cards.filter(
-    (card) =>
-      card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      card.source?.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-
-  if (!roomId) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#050810",
-          color: "#f0f2f5",
-          fontFamily: "'DM Sans',sans-serif",
-          gap: 20,
-        }}
-      >
-        <div style={{ fontSize: 48 }}>🏠</div>
-        <h2
-          style={{
-            fontFamily: "'Syne',sans-serif",
-            fontWeight: 900,
-            margin: 0,
-          }}
-        >
-          No room selected
-        </h2>
-        <p style={{ color: "rgba(255,255,255,0.4)", margin: 0 }}>
-          Join or create a collaborative shelf to get started.
-        </p>
-        <button
-          onClick={() => navigate("/room")}
-          style={{
-            padding: "12px 32px",
-            borderRadius: 14,
-            background: "linear-gradient(135deg,#8b5cf6,#d946ef)",
-            border: "none",
-            color: "#fff",
-            fontFamily: "'Syne',sans-serif",
-            fontWeight: 800,
-            fontSize: 16,
-            cursor: "pointer",
-          }}
-        >
-          Go to Room Gate →
-        </button>
-      </div>
-    );
-  }
-
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Syne:wght@700;800;900&family=DM+Sans:wght@300;400;500;600&display=swap');
-        body { margin:0; background:linear-gradient(180deg,#050810 0%,#0a0515 50%,#050810 100%); color:#e8eaf0; overflow-x:hidden; font-family:'DM Sans',sans-serif; min-height:100vh; }
-        * { box-sizing:border-box; }
-        .url-input { flex:1; padding:18px 24px; border-radius:16px; background:rgba(0,0,0,0.6); border:1px solid rgba(255,255,255,0.08); color:#f0f2f5; font-family:'DM Sans',sans-serif; font-weight:500; font-size:18px; letter-spacing:0.5px; transition:all 0.3s; outline:none; }
-        .url-input:focus { background:rgba(255,255,255,0.06); border-color:#8b5cf6; box-shadow:0 0 20px rgba(139,92,246,0.2); }
-        .url-input::placeholder { color:rgba(255,255,255,0.25); }
-        .submit-btn { padding:0 36px; border-radius:16px; border:1px solid rgba(139,92,246,0.5); background:rgba(139,92,246,0.15); color:#d946ef; font-family:'Syne',sans-serif; font-weight:800; font-size:16px; cursor:pointer; transition:all 0.3s; display:flex; align-items:center; justify-content:center; }
-        .submit-btn:hover:not(:disabled) { background:linear-gradient(135deg,#8b5cf6,#d946ef); color:#fff; border-color:transparent; box-shadow:0 0 25px rgba(217,70,239,0.5); transform:translateY(-2px); }
-        .submit-btn:disabled { opacity:0.5; cursor:not-allowed; filter:grayscale(1); }
-        @keyframes scan { 0%{transform:translateY(-100%)} 100%{transform:translateY(100%)} }
-        .scanner-line { position:absolute; top:0; left:0; right:0; height:100%; background:linear-gradient(to bottom,transparent,rgba(217,70,239,0.4) 50%,#d946ef 50%,transparent); animation:scan 2s linear infinite; pointer-events:none; }
-        @keyframes pulse { 0%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.2)} 100%{opacity:1;transform:scale(1)} }
-        @keyframes spin { 100%{transform:rotate(360deg)} }
+        body { 
+          margin: 0; 
+          background: #000000; 
+          color: rgba(255,255,255,0.92); 
+          overflow-x: hidden; 
+          font-family: 'Inter', sans-serif; 
+          min-height: 100vh;
+        }
+        * { box-sizing: border-box; }
+
+        .url-input {
+          flex: 1;
+          padding: 20px 28px;
+          border-radius: 20px;
+          background: rgba(255, 255, 255, 0.03);
+          backdrop-filter: blur(24px) saturate(150%);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: rgba(255,255,255,0.92);
+          font-family: 'Inter', sans-serif;
+          font-weight: 400;
+          font-size: 16px;
+          letter-spacing: 0.2px;
+          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+          outline: none;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .url-input:focus {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: rgba(0, 214, 255, 0.4);
+          box-shadow: 0 0 0 4px rgba(0, 214, 255, 0.1), inset 0 1px 0 rgba(255,255,255,0.1);
+        }
+        .url-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+
+        .submit-btn {
+          padding: 0 36px;
+          border-radius: 20px;
+          border: 1px solid rgba(0, 80, 255, 0.3);
+          background: rgba(0, 80, 255, 0.15);
+          backdrop-filter: blur(24px);
+          color: #00D6FF;
+          font-family: 'Inter', sans-serif;
+          font-weight: 600;
+          font-size: 15px;
+          cursor: pointer;
+          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 16px rgba(0, 80, 255, 0.2);
+        }
+        .submit-btn:hover:not(:disabled) {
+          background: rgba(0, 80, 255, 0.3);
+          color: #fff;
+          border-color: rgba(0, 214, 255, 0.5);
+          box-shadow: 0 8px 24px rgba(0, 214, 255, 0.3);
+          transform: translateY(-2px);
+        }
+        .submit-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+          filter: grayscale(1);
+        }
+
+        @keyframes scan {
+          0% { transform: translateY(-100%); }
+          100% { transform: translateY(100%); }
+        }
+        .scanner-line {
+          position: absolute;
+          top: 0; left: 0; right: 0; height: 100%;
+          background: linear-gradient(to bottom, transparent, rgba(0, 214, 255, 0.2) 50%, #00D6FF 50%, transparent);
+          animation: scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+          pointer-events: none;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
       `}</style>
 
-      <LiveCursors cursors={cursors} />
+      <Navbar />
 
-      <AnimatePresence>
-        {toast && (
-          <Toast key="toast" message={toast} onDone={() => setToast(null)} />
-        )}
-      </AnimatePresence>
+      <div ref={containerRef} style={{ position: 'relative', width: '100%', minHeight: '400vh' }}>
+        {/* Sticky Canvas Container */}
+        <div style={{ position: 'sticky', top: 0, left: 0, width: '100%', height: '100vh', overflow: 'hidden', zIndex: 0 }}>
+          <ScrollAnimationCanvas scrollYProgress={scrollYProgress} frameCount={240} imagePath="/1st/ezgif-frame-" />
+          <FloatingOrbs />
+        </div>
 
-      <Navbar
-        onlineCount={onlineCount}
-        weather={weather}
-        roomId={roomId}
-        roomName={roomName}
-      />
-
-      <SummaryModal card={selectedCard} onClose={() => setSelectedCard(null)} />
-
-      <div
-        style={{
-          position: "relative",
-          zIndex: 1,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          paddingTop: "120px",
-          paddingInline: "24px",
-          paddingBottom: "100px",
-          maxWidth: "1200px",
-          margin: "0 auto",
-        }}
-      >
-        <MotionDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          style={{ width: "100%", maxWidth: "760px", marginBottom: "60px" }}
-        >
-          <div style={{ textAlign: "center", marginBottom: "40px" }}>
-            <h1
-              style={{
-                fontFamily: "'Outfit',sans-serif",
-                fontSize: "56px",
-                fontWeight: 800,
-                letterSpacing: "-0.5px",
-                margin: "0 0 16px",
-                background: "linear-gradient(135deg,#ffffff 30%,#c084fc 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                lineHeight: 1.1,
-              }}
-            >
-              Add to your ShelfLife
-            </h1>
-            <p
-              style={{
-                fontFamily: "'Outfit',sans-serif",
-                fontSize: "18px",
-                fontWeight: 400,
-                color: "rgba(255,255,255,0.5)",
-                margin: 0,
-              }}
-            >
-              Paste any URL. We&apos;ll extract the essence and categorize it.
-            </p>
-          </div>
-
-          <form
-            onSubmit={handleSubmit}
-            style={{ display: "flex", gap: "12px", marginBottom: "40px" }}
+        {/* Overlay Content */}
+        <div style={{ position: 'relative', zIndex: 10, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '-100vh' }}>
+          <div
+            style={{
+              position: "relative",
+              zIndex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              paddingTop: "112px",
+              paddingInline: "32px",
+              paddingBottom: "100px",
+              maxWidth: "1200px",
+              width: "100%",
+              margin: "0 auto",
+            }}
           >
-            <input
-              type="url"
-              className="url-input"
-              placeholder="https://example.com/article..."
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              disabled={status !== "idle"}
-            />
-            <button
-              type="submit"
-              className="submit-btn"
-              disabled={status !== "idle" || !url}
+            {/* UPPER SECTION: ADD LINK */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+              style={{ width: "100%", maxWidth: "800px", marginBottom: "80px" }}
             >
-              {status === "loading" ? "Scanning..." : "Digest Link"}
-            </button>
-          </form>
-
-          <div style={{ minHeight: "150px" }}>
-            <AnimatePresence mode="wait">
-              {status === "loading" && (
-                <MotionDiv
-                  key="loading"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0, scale: 0.95 }}
-                  transition={{ duration: 0.4 }}
-                  style={{ overflow: "hidden" }}
+              {/* Header */}
+              <div style={{ textAlign: "center", marginBottom: "40px" }}>
+                <h1
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "64px",
+                    fontWeight: 700,
+                    letterSpacing: "-2px",
+                    margin: "0 0 16px",
+                    color: "rgba(255,255,255,0.95)",
+                    lineHeight: 1.1,
+                  }}
                 >
-                  <div
-                    style={{
-                      position: "relative",
-                      background: "rgba(0,0,0,0.8)",
-                      border: "1px solid rgba(139,92,246,0.4)",
-                      borderRadius: "16px",
-                      padding: "40px 30px",
-                      textAlign: "center",
-                      overflow: "hidden",
-                      backdropFilter: "blur(12px)",
-                    }}
-                  >
-                    <div className="scanner-line" />
-                    <div
-                      style={{
-                        width: "48px",
-                        height: "48px",
-                        borderRadius: "50%",
-                        border: "2px dashed #d946ef",
-                        margin: "0 auto 20px",
-                        animation: "spin 4s linear infinite",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
+                  Add to your ShelfLife
+                </h1>
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "18px",
+                    fontWeight: 400,
+                    color: "rgba(255,255,255,0.5)",
+                    margin: 0,
+                  }}
+                >
+                  Paste any URL. We'll extract the essence and categorize it.
+                </p>
+              </div>
+
+              {/* Form */}
+              <form
+                onSubmit={handleSubmit}
+                style={{
+                  display: "flex",
+                  gap: "16px",
+                  marginBottom: "40px",
+                  position: "relative",
+                }}
+              >
+                <input
+                  type="url"
+                  className="url-input"
+                  placeholder="https://example.com/article..."
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  disabled={status !== "idle"}
+                />
+                <button
+                  type="submit"
+                  className="submit-btn"
+                  disabled={status !== "idle" || !url}
+                >
+                  {status === "loading" ? "Scanning..." : "Digest Link"}
+                </button>
+              </form>
+
+              {/* Dynamic Section (Loading / Success) */}
+              <div style={{ minHeight: "150px" }}>
+                <AnimatePresence mode="wait">
+                  {/* LOADING STATE */}
+                  {status === "loading" && (
+                    <motion.div
+                      key="loading"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0, scale: 0.98 }}
+                      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                      style={{ overflow: "hidden" }}
                     >
                       <div
                         style={{
-                          width: "8px",
-                          height: "8px",
-                          background: "#d946ef",
-                          borderRadius: "50%",
-                          boxShadow: "0 0 10px #d946ef",
+                          position: "relative",
+                          background: "rgba(255, 255, 255, 0.02)",
+                          border: "1px solid rgba(255, 255, 255, 0.08)",
+                          borderRadius: "32px",
+                          padding: "40px 30px",
+                          textAlign: "center",
+                          overflow: "hidden",
+                          backdropFilter: "blur(32px) saturate(150%)",
+                          WebkitBackdropFilter: "blur(32px) saturate(150%)",
+                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1)",
                         }}
-                      />
-                    </div>
-                    <h3
-                      style={{
-                        fontFamily: "'Syne',sans-serif",
-                        color: "#d946ef",
-                        fontSize: "18px",
-                        fontWeight: 800,
-                        letterSpacing: "0.15em",
-                        margin: 0,
-                      }}
-                    >
-                      <DecryptedText
-                        text={LOADING_PHRASES[loadingPhraseIdx]}
-                        trigger={true}
-                        speed={30}
-                      />
-                    </h3>
-                    <p
-                      style={{
-                        fontSize: "13px",
-                        color: "rgba(255,255,255,0.5)",
-                        marginTop: "12px",
-                        fontFamily: "monospace",
-                      }}
-                    >
-                      &gt; AI model active. Please hold while we process the
-                      DOM...
-                    </p>
-                  </div>
-                </MotionDiv>
-              )}
+                      >
+                        <div className="scanner-line" />
 
-              {status === "success" && summaryData && (
-                <MotionDiv
-                  key="success"
-                  initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9, filter: "blur(10px)" }}
-                  transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                        <div
+                          style={{
+                            width: "48px",
+                            height: "48px",
+                            borderRadius: "50%",
+                            border: "2px solid rgba(0, 214, 255, 0.3)",
+                            borderTopColor: "#00D6FF",
+                            margin: "0 auto 24px",
+                            animation: "spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        />
+
+                        <h3
+                          style={{
+                            fontFamily: "'Inter', sans-serif",
+                            color: "#00D6FF",
+                            fontSize: "16px",
+                            fontWeight: 600,
+                            letterSpacing: "0.5px",
+                            margin: 0,
+                          }}
+                        >
+                          <DecryptedText
+                            text={LOADING_PHRASES[loadingPhraseIdx]}
+                            trigger={true}
+                            speed={20}
+                          />
+                        </h3>
+                        <p
+                          style={{
+                            fontSize: "13px",
+                            color: "rgba(255,255,255,0.4)",
+                            marginTop: "12px",
+                            fontFamily: "'Inter', sans-serif",
+                          }}
+                        >
+                          Intelligence active. Processing content structure...
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* SUCCESS SUMMARY STATE */}
+                  {status === "success" && summaryData && (
+                    <motion.div
+                      key="success"
+                      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
+                      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                    >
+                      <div
+                        style={{
+                          background: "rgba(255, 255, 255, 0.03)",
+                          border: "1px solid rgba(255, 255, 255, 0.1)",
+                          borderRadius: "32px",
+                          padding: "40px",
+                          boxShadow: "0 24px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)",
+                          position: "relative",
+                          overflow: "hidden",
+                          backdropFilter: "blur(32px) saturate(150%)",
+                          WebkitBackdropFilter: "blur(32px) saturate(150%)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                            marginBottom: "20px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              background: "rgba(0, 214, 255, 0.1)",
+                              color: "#00D6FF",
+                              border: "1px solid rgba(0, 214, 255, 0.2)",
+                              padding: "4px 12px",
+                              borderRadius: "999px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              fontFamily: "'Inter', sans-serif",
+                            }}
+                          >
+                            {summaryData.vibe}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "12px",
+                              fontFamily: "'Inter', sans-serif",
+                              color: "rgba(255,255,255,0.4)",
+                            }}
+                          >
+                            Analysis Complete
+                          </span>
+                        </div>
+
+                        <h2
+                          style={{
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: "24px",
+                            fontWeight: 700,
+                            letterSpacing: "-0.5px",
+                            margin: "0 0 16px",
+                            color: "rgba(255,255,255,0.95)",
+                          }}
+                        >
+                          <DecryptedText
+                            text={summaryData.title}
+                            trigger={true}
+                            speed={20}
+                          />
+                        </h2>
+
+                        <p
+                          style={{
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: "15px",
+                            fontWeight: 400,
+                            lineHeight: 1.6,
+                            color: "rgba(255,255,255,0.60)",
+                            margin: 0,
+                            paddingLeft: "16px",
+                            borderLeft: "2px solid rgba(255,255,255,0.1)",
+                          }}
+                        >
+                          <DecryptedText
+                            text={summaryData.summary}
+                            trigger={true}
+                            speed={5}
+                          />
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+
+            {/* LOWER SECTION: GRID OF LINKS */}
+            <div style={{ width: "100%", marginTop: "60vh" }}>
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-50px" }}
+                transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "20px",
+                  borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  paddingBottom: "24px",
+                  marginBottom: "40px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <h2
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "24px",
+                    fontWeight: 600,
+                    margin: 0,
+                    color: "rgba(255,255,255,0.95)",
+                    textShadow: "0 2px 10px rgba(0,0,0,0.35)",
+                  }}
                 >
-                  <div
+                  Your Collection
+                </h2>
+                
+                {/* Search Bar */}
+                <div style={{ position: 'relative', flex: 1, minWidth: "250px", maxWidth: "350px" }}>
+                  <input
+                    type="text"
+                    placeholder="Search by title, vibe, or source..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                     style={{
-                      background: "rgba(0,0,0,0.8)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: "20px",
-                      padding: "32px",
-                      position: "relative",
-                      overflow: "hidden",
-                      backdropFilter: "blur(12px)",
+                      width: "100%",
+                      padding: "12px 16px 12px 40px",
+                      borderRadius: "16px",
+                      background: "rgba(255, 255, 255, 0.02)",
+                      backdropFilter: "blur(16px)",
+                      border: "1px solid rgba(255, 255, 255, 0.06)",
+                      color: "rgba(255,255,255,0.92)",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "14px",
+                      transition: "all 0.3s ease",
+                      outline: "none",
+                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
                     }}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: "1px",
-                        background:
-                          "linear-gradient(90deg,transparent,rgba(139,92,246,0.8),transparent)",
-                      }}
-                    />
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        marginBottom: "16px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          background: "rgba(139,92,246,0.1)",
-                          color: "#c084fc",
-                          border: "1px solid rgba(139,92,246,0.3)",
-                          padding: "4px 12px",
-                          borderRadius: "999px",
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          letterSpacing: "0.05em",
-                          fontFamily: "'Syne',sans-serif",
-                        }}
-                      >
-                        {summaryData.vibe}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "12px",
-                          color: "rgba(255,255,255,0.3)",
-                        }}
-                      >
-                        Analysis Complete
-                      </span>
-                    </div>
-                    <h2
-                      style={{
-                        fontFamily: "'Syne',sans-serif",
-                        fontSize: "28px",
-                        fontWeight: 800,
-                        margin: "0 0 16px",
-                        color: "#f0f2f5",
-                      }}
-                    >
-                      <DecryptedText
-                        text={summaryData.title}
-                        trigger={true}
-                        speed={20}
-                      />
-                    </h2>
-                    <p
-                      style={{
-                        fontFamily: "'DM Sans',sans-serif",
-                        fontSize: "16px",
-                        fontWeight: 300,
-                        lineHeight: 1.7,
-                        color: "rgba(255,255,255,0.8)",
-                        margin: 0,
-                        paddingLeft: "16px",
-                        borderLeft: "2px solid #8b5cf6",
-                      }}
-                    >
-                      <DecryptedText
-                        text={summaryData.summary}
-                        trigger={true}
-                        speed={5}
-                      />
-                    </p>
-                  </div>
-                </MotionDiv>
-              )}
-            </AnimatePresence>
-          </div>
-        </MotionDiv>
-
-        <div style={{ width: "100%" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "20px",
-              borderBottom: "1px solid rgba(255,255,255,0.08)",
-              paddingBottom: "16px",
-              marginBottom: "32px",
-              flexWrap: "wrap",
-            }}
-          >
-            <h2
-              style={{
-                fontFamily: "'Syne',sans-serif",
-                fontSize: "24px",
-                fontWeight: 800,
-                margin: 0,
-                color: "#fff",
-              }}
-            >
-              {roomName ? `${roomName}'s Collection` : "Your Collection"}
-            </h2>
-            <input
-              type="text"
-              placeholder="Search by title, vibe, or source..."
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              style={{
-                flex: "1",
-                minWidth: "250px",
-                padding: "10px 16px",
-                borderRadius: "12px",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                color: "#f0f2f5",
-                fontFamily: "'DM Sans',sans-serif",
-                fontSize: "14px",
-                outline: "none",
-              }}
-              onFocus={(event) => {
-                event.target.style.background = "rgba(255,255,255,0.08)";
-                event.target.style.borderColor = "rgba(217,70,239,0.5)";
-              }}
-              onBlur={(event) => {
-                event.target.style.background = "rgba(255,255,255,0.05)";
-                event.target.style.borderColor = "rgba(255,255,255,0.1)";
-              }}
-            />
-
-            <span
-              style={{
-                color: "rgba(255,255,255,0.4)",
-                fontSize: "14px",
-                fontFamily: "'DM Sans',sans-serif",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {filteredCards.length} / {cards.length} Links
-            </span>
-          </div>
-
-          <MotionDiv
-            layout
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))",
-              gap: "24px",
-            }}
-          >
-            <AnimatePresence>
-              {filteredCards.map((card, index) => (
-                <MotionDiv
-                  key={card._id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.8, y: 50 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                >
-                  <GridCard
-                    card={card}
-                    index={index}
-                    onReact={handleReact}
-                    floatingEmojis={floatingEmojis}
-                    onDelete={handleDelete}
-                    onCardClick={setSelectedCard}
+                    onFocus={(e) => {
+                      e.target.style.background = "rgba(255, 255, 255, 0.05)";
+                      e.target.style.borderColor = "rgba(0, 214, 255, 0.3)";
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.background = "rgba(255, 255, 255, 0.02)";
+                      e.target.style.borderColor = "rgba(255, 255, 255, 0.06)";
+                    }}
                   />
-                </MotionDiv>
-              ))}
-            </AnimatePresence>
-          </MotionDiv>
+                  <svg style={{ position: 'absolute', left: 14, top: 13, width: 16, height: 16, fill: "none", stroke: "rgba(255,255,255,0.4)", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }} viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </div>
+                
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  style={{
+                    color: "rgba(255,255,255,0.75)",
+                    fontSize: "14px",
+                    fontFamily: "'Inter', sans-serif",
+                    whiteSpace: "nowrap",
+                    textShadow: "0 2px 10px rgba(0,0,0,0.35)",
+                  }}
+                >
+                  {cards.filter(card => 
+                    card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    card.source?.toLowerCase().includes(searchQuery.toLowerCase())
+                  ).length} / {cards.length} Links
+                </motion.span>
+              </motion.div>
 
-          {filteredCards.length === 0 && (
-            <div
-              style={{
-                marginTop: "16px",
-                color: "rgba(255,255,255,0.55)",
-                fontFamily: "'DM Sans',sans-serif",
-                fontSize: "14px",
-              }}
-            >
-              No matching links found.
+              <motion.div
+                layout
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                  gap: "28px",
+                }}
+              >
+                <AnimatePresence>
+                  {cards
+                    .filter(card => 
+                      card.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      card.vibe?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      card.source?.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .map((card, idx) => (
+                    <motion.div
+                      key={card._id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, filter: "blur(8px)" }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    >
+                      <GridCard card={card} index={idx} />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </motion.div>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </>

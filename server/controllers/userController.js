@@ -33,7 +33,6 @@ export const registerUser = async (req, res) => {
     const payload = {
       user: {
         id: user.id,
-        username: user.username,
       },
     };
 
@@ -76,7 +75,6 @@ export const loginUser = async (req, res) => {
     const payload = {
       user: {
         id: user.id,
-        username: user.username,
       },
     };
 
