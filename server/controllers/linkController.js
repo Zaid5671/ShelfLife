@@ -6,7 +6,7 @@ import Link from "../models/Link.js";
 // @route   POST /api/links/ingest
 // @access  Private
 export const ingestLink = async (req, res) => {
-  const { url } = req.body;
+  const { url, roomId } = req.body; // ← roomId now comes from the frontend
   const userId = req.user.id;
 
   if (!url) {
@@ -21,15 +21,11 @@ export const ingestLink = async (req, res) => {
     }
     const html = await response.text();
 
-    // 2. Parse the HTML with Cheerio
+    // 2. Parse with Cheerio
     const $ = cheerio.load(html);
-
-    // 3. Extract the title and content
     const title =
       $("title").first().text() || $("h1").first().text() || "No title found";
 
-    // Simple content extraction (can be improved)
-    // This removes script/style tags and gets the text from the body
     $("script, style, nav, footer, header, aside").remove();
     const content = $("body").text().replace(/\s\s+/g, " ").trim();
     const summary = content.slice(0, 200) + (content.length > 200 ? "..." : "");
@@ -41,20 +37,41 @@ export const ingestLink = async (req, res) => {
         .json({ message: "Could not extract content from the URL." });
     }
 
-    // 4. Create and save the new Link
+    // 3. Save to DB — attach roomId if provided
     const newLink = new Link({
       user: userId,
+      roomId: roomId || null, // ← store which room this belongs to
       originalUrl: url,
       title,
       summary,
       source,
-      content, // Storing full content for future use
-      vibe: "Educational", // Placeholder
-      icon: "📘", // Placeholder
-      decay: Math.floor(Math.random() * 10), // Placeholder
+      content,
+      vibe: "Educational",
+      icon: "📘",
+      decay: Math.floor(Math.random() * 10),
     });
 
     await newLink.save();
+
+    // 4. ── WEBSOCKET: Broadcast new link ONLY to the relevant room ──────────
+    const io = req.app.locals.io;
+    if (io) {
+      if (roomId) {
+        // Emit only to sockets that have joined this socket.io room
+        io.to(roomId).emit("message", {
+          type: "LINK_ADDED",
+          card: newLink,
+          addedBy: req.user.username || "Someone",
+        });
+      } else {
+        // No room — broadcast globally (personal shelf, fallback)
+        io.emit("message", {
+          type: "LINK_ADDED",
+          card: newLink,
+          addedBy: req.user.username || "Someone",
+        });
+      }
+    }
 
     res.status(201).json(newLink);
   } catch (error) {
@@ -66,14 +83,23 @@ export const ingestLink = async (req, res) => {
   }
 };
 
-// @desc    Get all links for a user
-// @route   GET /api/links
+// @desc    Get all links — filtered by roomId if provided
+// @route   GET /api/links?roomId=XXXX
 // @access  Private
 export const getLinks = async (req, res) => {
   try {
-    const links = await Link.find({ user: req.user.id }).sort({
-      createdAt: -1,
-    });
+    const { roomId } = req.query;
+
+    let query;
+    if (roomId) {
+      // Fetch links belonging to this specific room
+      query = { roomId: roomId.toUpperCase().trim() };
+    } else {
+      // Fetch only the user's personal (non-room) links
+      query = { user: req.user.id, roomId: null };
+    }
+
+    const links = await Link.find(query).sort({ createdAt: -1 });
     res.json(links);
   } catch (error) {
     console.error("Error fetching links:", error);
