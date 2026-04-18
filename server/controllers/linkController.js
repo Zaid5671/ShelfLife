@@ -1,35 +1,111 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
+import Groq from "groq-sdk";
 import Link from "../models/Link.js";
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+async function getGroqChatCompletion(content) {
+  const prompt = `
+    Analyze the following web content and return a JSON object with the following structure:
+    {
+      "title": "A concise, catchy title for the content",
+      "summary": "A 2-3 sentence summary of the key points. Should be engaging and informative.",
+      "vibe": "Choose ONE of the following vibes that best fits the content: High-Signal, Educational, Chaotic, Cursed",
+      "icon": "Provide a single emoji that represents the content's theme."
+    }
+
+    Here is the content:
+    ---
+    ${content.slice(0, 7000)}
+    ---
+  `;
+
+  try {
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.7,
+      max_tokens: 250,
+      top_p: 1,
+      response_format: { type: "json_object" },
+    });
+
+    const result = chatCompletion.choices[0]?.message?.content;
+    if (!result) throw new Error("Groq API returned no result.");
+    return JSON.parse(result);
+  } catch (error) {
+    console.error("Groq API Error:", error);
+    return {
+      title: "Content Analysis Failed",
+      summary: "The AI summarizer could not process this content.",
+      vibe: "Cursed",
+      icon: "💀",
+    };
+  }
+}
+
+async function getCategoryFromSummary(summary) {
+  const prompt = `
+    Based on the following summary, what is the best single-word category for this content?
+    Return a JSON object with a single key "category". For example: {"category": "Technology"}.
+
+    Do not use generic terms like "Informative" or "Article". Be specific, like "Programming", "Health", "Science", "History", "Business", "Art", etc.
+
+    Summary:
+    ---
+    ${summary}
+    ---
+  `;
+
+  try {
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.5,
+      max_tokens: 50,
+      top_p: 1,
+      response_format: { type: "json_object" },
+    });
+
+    const result = chatCompletion.choices[0]?.message?.content;
+    if (!result) throw new Error("Groq API returned no category result.");
+
+    const parsedResult = JSON.parse(result);
+    return parsedResult.category || "General";
+  } catch (error) {
+    console.error("Groq Category API Error:", error);
+    return "General";
+  }
+}
 
 // @desc    Scrape and save a new link
 // @route   POST /api/links/ingest
 // @access  Private
 export const ingestLink = async (req, res) => {
-  const { url, roomId } = req.body; // ← roomId now comes from the frontend
+  const { url, roomId } = req.body;
   const userId = req.user.id;
+  const requestedRoomId = roomId ? roomId.toUpperCase().trim() : null;
+  const isPersonalShelf = requestedRoomId?.startsWith("PERSONAL_");
+  const storageRoomId = isPersonalShelf ? null : requestedRoomId;
 
   if (!url) {
     return res.status(400).json({ message: "URL is required" });
   }
 
   try {
-    // 1. Fetch the HTML from the URL
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to fetch URL: ${response.statusText}`);
     }
     const html = await response.text();
 
-    // 2. Parse with Cheerio
     const $ = cheerio.load(html);
-    const title =
+    const scrapedTitle =
       $("title").first().text() || $("h1").first().text() || "No title found";
 
     $("script, style, nav, footer, header, aside").remove();
     const content = $("body").text().replace(/\s\s+/g, " ").trim();
-    const summary = content.slice(0, 200) + (content.length > 200 ? "..." : "");
-    const source = new URL(url).hostname.replace(/^www\./, "");
 
     if (!content) {
       return res
@@ -37,34 +113,35 @@ export const ingestLink = async (req, res) => {
         .json({ message: "Could not extract content from the URL." });
     }
 
-    // 3. Save to DB — attach roomId if provided
+    const aiAnalysis = await getGroqChatCompletion(content);
+    const category = await getCategoryFromSummary(
+      aiAnalysis.summary || content.slice(0, 500),
+    );
+
     const newLink = new Link({
       user: userId,
-      roomId: roomId || null, // ← store which room this belongs to
+      roomId: storageRoomId,
       originalUrl: url,
-      title,
-      summary,
-      source,
+      title: aiAnalysis.title || scrapedTitle,
+      summary: aiAnalysis.summary || "No summary available.",
+      vibe: category || aiAnalysis.vibe || "Educational",
+      icon: aiAnalysis.icon || "📘",
+      source: new URL(url).hostname.replace(/^www\./, ""),
       content,
-      vibe: "Educational",
-      icon: "📘",
-      decay: Math.floor(Math.random() * 10),
+      decay: 0,
     });
 
     await newLink.save();
 
-    // 4. ── WEBSOCKET: Broadcast new link ONLY to the relevant room ──────────
     const io = req.app.locals.io;
     if (io) {
-      if (roomId) {
-        // Emit only to sockets that have joined this socket.io room
-        io.to(roomId).emit("message", {
+      if (requestedRoomId) {
+        io.to(requestedRoomId).emit("message", {
           type: "LINK_ADDED",
           card: newLink,
           addedBy: req.user.username || "Someone",
         });
       } else {
-        // No room — broadcast globally (personal shelf, fallback)
         io.emit("message", {
           type: "LINK_ADDED",
           card: newLink,
@@ -75,7 +152,7 @@ export const ingestLink = async (req, res) => {
 
     res.status(201).json(newLink);
   } catch (error) {
-    console.error("Scraping error:", error);
+    console.error("Ingestion error:", error);
     res.status(500).json({
       message:
         "Failed to ingest link. The URL may be invalid or the site may block scraping.",
@@ -90,13 +167,18 @@ export const getLinks = async (req, res) => {
   try {
     const { roomId } = req.query;
 
+    const normalizedRoomId = roomId ? roomId.toUpperCase().trim() : null;
+
     let query;
-    if (roomId) {
-      // Fetch links belonging to this specific room
-      query = { roomId: roomId.toUpperCase().trim() };
-    } else {
-      // Fetch only the user's personal (non-room) links
+    if (!normalizedRoomId) {
       query = { user: req.user.id, roomId: null };
+    } else if (normalizedRoomId.startsWith("PERSONAL_")) {
+      query = {
+        user: req.user.id,
+        roomId: { $in: [null, normalizedRoomId] },
+      };
+    } else {
+      query = { roomId: normalizedRoomId };
     }
 
     const links = await Link.find(query).sort({ createdAt: -1 });
@@ -104,5 +186,26 @@ export const getLinks = async (req, res) => {
   } catch (error) {
     console.error("Error fetching links:", error);
     res.status(500).send("Server Error");
+  }
+};
+
+// @desc    Delete a link
+// @route   DELETE /api/links/:id
+// @access  Private
+export const deleteLink = async (req, res) => {
+  try {
+    const deletedLink = await Link.findOneAndDelete({
+      _id: req.params.id,
+      user: req.user.id,
+    });
+
+    if (!deletedLink) {
+      return res.status(404).json({ message: "Link not found" });
+    }
+
+    res.json({ message: "Link deleted successfully", id: deletedLink._id });
+  } catch (error) {
+    console.error("Error deleting link:", error);
+    res.status(500).json({ message: "Server error while deleting link" });
   }
 };

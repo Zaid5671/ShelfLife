@@ -1,5 +1,9 @@
 import express from "express";
-import { ingestLink, getLinks } from "../controllers/linkController.js";
+import {
+  ingestLink,
+  getLinks,
+  deleteLink,
+} from "../controllers/linkController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
@@ -13,5 +17,10 @@ router.post("/ingest", authMiddleware, ingestLink);
 // @desc    Get all links for a user
 // @access  Private
 router.get("/", authMiddleware, getLinks);
+
+// @route   DELETE /api/links/:id
+// @desc    Delete a link for a user
+// @access  Private
+router.delete("/:id", authMiddleware, deleteLink);
 
 export default router;
