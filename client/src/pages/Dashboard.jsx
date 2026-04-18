@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 // ─── UTILITY: DecryptedText ──────────────────────────────────────────────────
 function DecryptedText({ text = "", trigger = false, speed = 25 }) {
@@ -81,12 +82,18 @@ const LOADING_PHRASES = [
 // ─── NAVBAR COMPONENT ────────────────────────────────────────────────────────
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 30);
     window.addEventListener("scroll", h);
     return () => window.removeEventListener("scroll", h);
   }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    navigate("/login");
+  };
 
   return (
     <nav
@@ -162,6 +169,23 @@ function Navbar() {
           System Online
         </span>
       </div>
+      <button
+        onClick={handleLogout}
+        style={{
+          padding: "8px 16px",
+          borderRadius: "8px",
+          border: "1px solid rgba(217, 70, 239, 0.5)",
+          background: "transparent",
+          color: "#d946ef",
+          fontFamily: "'DM Sans', sans-serif",
+          fontWeight: 600,
+          fontSize: "14px",
+          cursor: "pointer",
+          transition: "all 0.3s ease",
+        }}
+      >
+        Logout
+      </button>
     </nav>
   );
 }
