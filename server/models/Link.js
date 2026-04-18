@@ -8,6 +8,13 @@ const linkSchema = new Schema(
       ref: "User",
       required: true,
     },
+    // ── ROOM: which collaborative shelf this link belongs to ─────────────────
+    // null = personal link (no room), string = room's roomId
+    roomId: {
+      type: String,
+      default: null,
+      index: true,
+    },
     originalUrl: {
       type: String,
       required: true,
@@ -51,9 +58,8 @@ const linkSchema = new Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 const Link = mongoose.model("Link", linkSchema);
-
 export default Link;
