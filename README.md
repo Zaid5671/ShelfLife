@@ -7,7 +7,7 @@ SHELFLIFE is a social, AI-augmented curation engine built to fight the "Digital 
 ### ✨ Core Features
 
 - **Autonomous AI Ingestion:** Drop a URL, and our background worker automatically scrapes metadata and uses GenAI to generate a 3-sentence executive summary.
-- **Biological Decay:** A visual aging algorithm where links that remain unclicked for 14 days begin to desaturate and shrink[cite: 53, 54]. [cite_start]After 30 days of neglect, they "die" and are moved to a public Compost Heap.
+- **Biological Decay:** A visual aging algorithm where links that remain unclicked for 14 days begin to desaturate and shrink. After 30 days of neglect, they "die" and are moved to a public Compost Heap.
 - **Semantic Vibe-Engine:** Links are auto-classified by LLM sentiment analysis into visual "Mood Pills" (e.g., Educational, Chaotic).
 - **Real-Time Synapse:** A multiplayer, high-concurrency shared workspace powered by WebSockets.
 
